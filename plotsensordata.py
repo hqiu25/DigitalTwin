@@ -19,16 +19,15 @@ import matplotlib.animation as animation
 # plot class
 class AnalogPlot:
   # constr
-  def __init__(self, strPort, maxLen):
+  def __init__(self, strPort, maxLen, num_variables, plot_params):
       # open serial port
-      self.ser = serial.Serial(strPort, 250000)
-
-      self.ax = deque([0.0]*maxLen)
-      self.ay = deque([0.0]*maxLen)
-      self.az = deque([0.0]*maxLen)
-      self.av = deque([0.0]*maxLen)
-      self.aw = deque([0.0]*maxLen)
-      self.maxLen = maxLen
+    self.ser = serial.Serial(strPort, 250000)
+    self.plot_params = plot_params
+    self.maxLen = maxLen
+    self.num_variables = num_variables
+    self.axes_values = []
+    for i in range(len(plot_params)):
+        self.axes_values.append(deque([0.0]*maxLen))
 
   # add to buffer
   def addToBuf(self, buf, val):
@@ -40,32 +39,27 @@ class AnalogPlot:
 
   # add data
   def add(self, data):
-      assert(len(data) == 7)
-      self.addToBuf(self.ax, data[0])
-      self.addToBuf(self.ay, data[1])
-      self.addToBuf(self.az, (data[2]+data[3]+data[4])/3)
-      self.addToBuf(self.av, data[5])
-      self.addToBuf(self.aw, data[6])
+    assert(len(data) == self.num_variables)
+    self.addToBuf(self.axes_values[0], data[0])
+    self.addToBuf(self.axes_values[1], data[1])
+    self.addToBuf(self.axes_values[2], (data[2]+data[3]+data[4])/3)
+    self.addToBuf(self.axes_values[3], data[5])
+    self.addToBuf(self.axes_values[4], data[6])
 
   # update plot
-  def update(self, frameNum, a0, a1, a2, a3, a4):
-      try:
-          line = self.ser.readline()
-          data = [float(val) for val in line.split()]
-          # Celsius:22.94,RPM:6,X:760,Y:865,Z:767
-    
-          # print data
-          if(len(data) == 7):
-              self.add(data)
-              a0.set_data(range(self.maxLen), self.ax)
-              a1.set_data(range(self.maxLen), self.ay)
-              a2.set_data(range(self.maxLen), self.az)
-              a3.set_data(range(self.maxLen), self.av)
-              a4.set_data(range(self.maxLen), self.aw)
-      except KeyboardInterrupt:
-          print('exiting')
+  def update(self, *axes_line2d):
+    axes_line2d = axes_line2d[1:]
+    try:
+        line = self.ser.readline()
+        data = [float(val) for val in line.split()]
+        if(len(data) == self.num_variables):
+            self.add(data)
+            for i in range(len(self.plot_params)):
+                axes_line2d[i].set_data(range(self.maxLen), self.axes_values[i])
+    except KeyboardInterrupt:
+        print('exiting')
       
-      return a0, 
+    return self.axes_values[0], 
 
   # clean up
   def close(self):
@@ -89,40 +83,29 @@ def main():
   print('reading from serial port %s...' % strPort)
 
   # plot parameters
-  analogPlot = AnalogPlot(strPort, 100)
+  plot_params = [
+    (0, 100, 20, 40, 'Temperature' ),
+    (0, 100, 0, 250, 'Rotations Per Minute' ),
+    (0, 100, 400, 1000, 'Accelerometer' ),
+    (0, 100, 0, 1030, 'Voltage' ),
+    (0, 100, 700, 800, 'Current' ),
+  ]
+
+  analogPlot = AnalogPlot(strPort, 100, 7, plot_params)
 
   print('plotting data...')
 
   # set up animation
-#   fig = plt.figure()
-#   ax = plt.axes(xlim=(0, 100), ylim=(0, 100))
-#   a0, = ax.plot([], [])
-#   a1, = ax.plot([], [])
-#   a2, = ax.plot([], [])
-# set up animation
-  fig, (a0_axes_subplot, a1_axes_subplot, a2_axes_subplot, a3_axes_subplot, a4_axes_subplot) = plt.subplots(ncols=5, nrows=1)
-  a0_axes_subplot.set_xlim(0, 100)
-  a0_axes_subplot.set_ylim(20, 40)
-  a1_axes_subplot.set_xlim(0, 100)
-  a1_axes_subplot.set_ylim(0, 250)
-  a2_axes_subplot.set_xlim(0, 100)
-  a2_axes_subplot.set_ylim(400, 1000)
-  a3_axes_subplot.set_xlim(0, 100)
-  a3_axes_subplot.set_ylim(0, 1030)
-  a4_axes_subplot.set_xlim(0, 100)
-  a4_axes_subplot.set_ylim(700, 800)
-  a0_axes_subplot.set_title('Temperature', fontfamily='serif', loc='left', fontsize='medium')
-  a1_axes_subplot.set_title('Rotations Per Minute', fontfamily='serif', loc='left', fontsize='medium')
-  a2_axes_subplot.set_title('Accelerometer', fontfamily='serif', loc='left', fontsize='medium')
-  a3_axes_subplot.set_title('Voltage', fontfamily='serif', loc='left', fontsize='medium')
-  a4_axes_subplot.set_title('Current', fontfamily='serif', loc='left', fontsize='medium')
-  a0_line2d, = a0_axes_subplot.plot([], [])
-  a1_line2d, = a1_axes_subplot.plot([], [])
-  a2_line2d, = a2_axes_subplot.plot([], [])
-  a3_line2d, = a3_axes_subplot.plot([], [])
-  a4_line2d, = a4_axes_subplot.plot([], [])
+  fig, axes_subplots = plt.subplots(ncols=len(plot_params), nrows=1)
+  axes_line2d = []
+  for i, (x_min, x_max, y_min, y_max, label) in enumerate(plot_params):
+    axes_subplots[i].set_xlim(x_min, x_max)
+    axes_subplots[i].set_ylim(y_min, y_max)
+    axes_subplots[i].set_title(label, fontfamily='serif', loc='left', fontsize='medium')
+    line2d, = axes_subplots[i].plot([], [])
+    axes_line2d.append(line2d)
   anim = animation.FuncAnimation(fig, analogPlot.update, 
-                                  fargs=(a0_line2d, a1_line2d, a2_line2d, a3_line2d, a4_line2d), 
+                                  fargs=axes_line2d, 
                                   interval=10)
 
   # show plot
